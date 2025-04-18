@@ -7,7 +7,6 @@ import (
 	"runtime"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/pdfcpu/pdfcpu/pkg/api"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
@@ -33,6 +32,7 @@ var scale float64
 var WIDTH int
 var HEIGHT int
 var FILE_TYPE string
+var DEBUG bool
 
 func init() {
 	flag.StringVar(&PDF_PATH, "pdf_path", "", "Path to the input PDF file. (Required)")
@@ -42,6 +42,7 @@ func init() {
 	flag.IntVar(&HEIGHT, "height", 0, "Height of the output image in pixels. Ignored if scale is provided.")
 	flag.StringVar(&FILE_TYPE, "file_type", "png", "Output image format. Supported formats: png, jpg, pdf, webp. Defaults to png.")
 	flag.Var(&PAGES, "pages", "List of page numbers to process (e.g., --pages=1,2,3 or --pages=[1,2,3]).")
+	flag.BoolVar(&DEBUG, "debug", false, "Print debug logs.")
 	flag.Parse()
 
 	logger.SetOutput(os.Stdout)
@@ -51,7 +52,9 @@ func init() {
 		FullTimestamp:   true,
 		PadLevelText:    true,
 	})
-	logger.SetLevel(logger.DebugLevel)
+	if DEBUG {
+		logger.SetLevel(logger.DebugLevel)
+	}
 }
 
 func main() {
@@ -111,8 +114,6 @@ func main() {
 	CPU_CORES := runtime.NumCPU()
 	ch := make(chan int, min(CPU_CORES, len(PAGES)))
 
-	start := time.Now()
-
 	for _, i := range PAGES {
 		go extractPage(ctx, ch, &format)
 
@@ -120,9 +121,6 @@ func main() {
 		ch <- i
 	}
 	wg.Wait()
-
-	end := time.Now()
-	logger.Debugf("Execution time: %v", end.Sub(start))
 
 	logger.Info("PDF to image conversion completed successfully.")
 }
