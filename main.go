@@ -16,7 +16,6 @@ import (
 
 type intSlice []int
 
-var wg sync.WaitGroup
 var formatMap = map[string]imgconv.Format{
 	"png":  imgconv.PNG,
 	"jpg":  imgconv.JPEG,
@@ -111,36 +110,38 @@ func main() {
 		return
 	}
 
-	CPU_CORES := runtime.NumCPU()
-	ch := make(chan int, min(CPU_CORES, len(PAGES)))
+	cpuCores := runtime.NumCPU()
+
+	wg := sync.WaitGroup{}
+	ch := make(chan struct{}, min(cpuCores, len(PAGES)))
 
 	for _, i := range PAGES {
-		go extractPage(ctx, ch, &format)
-
 		wg.Add(1)
-		ch <- i
+		ch <- struct{}{}
+		go func(i int) {
+			extractPage(ctx, i, &format)
+			wg.Done()
+			<-ch
+		}(i)
 	}
 	wg.Wait()
 
 	logger.Info("PDF to image conversion completed successfully.")
 }
 
-func extractPage(ctx *model.Context, ch chan int, format *imgconv.Format) {
-	defer wg.Done()
-	i := <-ch
+func extractPage(ctx *model.Context, pageNum int, format *imgconv.Format) {
+	logger.Debugf("-- Processing page %d --", pageNum)
 
-	logger.Debugf("-- Processing page %d --", i)
-
-	r, err := api.ExtractPage(ctx, i)
+	r, err := api.ExtractPage(ctx, pageNum)
 	if err != nil {
-		logger.Errorf("Unable to extract page %d from the provided PDF.", i)
+		logger.Errorf("Unable to extract page %d from the provided PDF.", pageNum)
 		logger.Debug(err)
 		return
 	}
 
 	img, err := imgconv.Decode(r)
 	if err != nil {
-		logger.Errorf("Failed to decode page %d from the provided PDF.", i)
+		logger.Errorf("Failed to decode page %d from the provided PDF.", pageNum)
 		logger.Debug(err)
 		return
 	}
@@ -151,10 +152,10 @@ func extractPage(ctx *model.Context, ch chan int, format *imgconv.Format) {
 		img = imgconv.Resize(img, &imgconv.ResizeOption{Width: WIDTH, Height: HEIGHT})
 	}
 
-	filename := fmt.Sprintf("%s/%d.%s", OUTPUT_PATH, i, FILE_TYPE)
+	filename := fmt.Sprintf("%s/%d.%s", OUTPUT_PATH, pageNum, FILE_TYPE)
 	err = imgconv.Save(filename, img, &imgconv.FormatOption{Format: *format})
 	if err != nil {
-		logger.Errorf("Could not save page %d to file (%s).", i, filename)
+		logger.Errorf("Could not save page %d to file (%s).", pageNum, filename)
 		logger.Debug(err)
 		return
 	}
