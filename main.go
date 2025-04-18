@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"os"
 	"runtime"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/pdfcpu/pdfcpu/pkg/api"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
+	logger "github.com/sirupsen/logrus"
 	"github.com/sunshineplan/imgconv"
 )
 
@@ -34,97 +34,58 @@ var WIDTH int
 var HEIGHT int
 var FILE_TYPE string
 
-func (i *intSlice) String() string {
-	return fmt.Sprintf("%v", *i)
-}
+func init() {
+	flag.StringVar(&PDF_PATH, "pdf_path", "", "Path to the input PDF file. (Required)")
+	flag.StringVar(&OUTPUT_PATH, "output_path", "./", "Directory where output files will be saved. Defaults to the current directory.")
+	flag.Float64Var(&scale, "scale", 100, "Scaling factor for the output image as a percentage. Defaults to 100%.")
+	flag.IntVar(&WIDTH, "width", 0, "Width of the output image in pixels. Ignored if scale is provided.")
+	flag.IntVar(&HEIGHT, "height", 0, "Height of the output image in pixels. Ignored if scale is provided.")
+	flag.StringVar(&FILE_TYPE, "file_type", "png", "Output image format. Supported formats: png, jpg, pdf, webp. Defaults to png.")
+	flag.Var(&PAGES, "pages", "List of page numbers to process (e.g., --pages=1,2,3 or --pages=[1,2,3]).")
+	flag.Parse()
 
-func (i *intSlice) Set(value string) error {
-	// Trim brackets if they exist
-	value = strings.Trim(value, "[]")
-	if value == "" {
-		return nil
-	}
-
-	// Split string by comma
-	strValues := strings.Split(value, ",")
-	for _, str := range strValues {
-		num, err := strconv.Atoi(strings.TrimSpace(str))
-		if err != nil {
-			return err
-		}
-		*i = append(*i, num)
-	}
-	return nil
-}
-
-func extractPage(ctx *model.Context, ch chan int, format *imgconv.Format) {
-	defer wg.Done()
-	i := <-ch
-
-	fmt.Println("Processing page:", i)
-
-	r, err := api.ExtractPage(ctx, i)
-	if err != nil {
-		fmt.Println("Error extracting page:", err)
-		return
-	}
-
-	img, err := imgconv.Decode(r)
-	if err != nil {
-		fmt.Println("Error decoding image:", err)
-		return
-	}
-
-	if scale != 100 {
-		img = imgconv.Resize(img, &imgconv.ResizeOption{Percent: scale})
-	} else if WIDTH != 0 && HEIGHT != 0 {
-		img = imgconv.Resize(img, &imgconv.ResizeOption{Width: WIDTH, Height: HEIGHT})
-	}
-
-	filename := fmt.Sprintf("%s/%d.%s", OUTPUT_PATH, i, FILE_TYPE)
-	if err := imgconv.Save(filename, img, &imgconv.FormatOption{Format: *format}); err != nil {
-		fmt.Println("Error saving image:", err)
-		return
-	}
+	logger.SetOutput(os.Stdout)
+	logger.SetFormatter(&logger.TextFormatter{
+		ForceColors:     true,
+		TimestampFormat: "02-01-2006 15:04:05",
+		FullTimestamp:   true,
+		PadLevelText:    true,
+	})
+	logger.SetLevel(logger.DebugLevel)
 }
 
 func main() {
-	flag.StringVar(&PDF_PATH, "pdf_path", "", "Specify the path to the input PDF file. (Required)")
-	flag.StringVar(&OUTPUT_PATH, "output_path", "./", "Specify the directory where output files will be saved. Defaults to the current directory.")
-	flag.Float64Var(&scale, "scale", 100, "Set the scaling factor for the output image as a percentage. Defaults to 100 for 100%.")
-	flag.IntVar(&WIDTH, "width", 0, "Set the width of the output image in pixels. Ignored if scale is provided.")
-	flag.IntVar(&HEIGHT, "height", 0, "Set the height of the output image in pixels. Ignored if scale is provided.")
-	flag.StringVar(&FILE_TYPE, "file_type", "png", "Specify the output image format. Supported formats: png, jpg, pdf, webp. Defaults to png.")
-	flag.Var(&PAGES, "pages", "Specify the list of page numbers to process (e.g., --pages=1,2,3 or --pages=[1,2,3]).")
-	flag.Parse()
-
+	logger.Info("Starting Imagify...")
 	if PDF_PATH == "" {
-		fmt.Println("Must provide a PDF file path using --pdf_path flag")
+		logger.Error("Please provide the path to the PDF file using the --pdf_path flag.")
 		return
 	}
 
 	_, err := os.Stat(PDF_PATH)
 	if os.IsNotExist(err) {
-		fmt.Println("Provided pdf_path does not exist:", PDF_PATH)
+		logger.Errorf("The specified PDF file does not exist (%s).", PDF_PATH)
+		logger.Debug(err)
 		return
 	}
 
 	if OUTPUT_PATH == "./" {
-		// pwd, _ := os.Getwd()
 		OUTPUT_PATH = strings.Split(PDF_PATH, ".")[0]
 	}
 
-	if err := os.MkdirAll(OUTPUT_PATH, os.ModePerm); err != nil {
-		fmt.Println("Error creating specified output directory:", err)
+	err = os.MkdirAll(OUTPUT_PATH, os.ModePerm)
+	if err != nil {
+		logger.Errorf("Unable to create the output directory (%s).", OUTPUT_PATH)
+		logger.Debug(err)
 		return
 	}
 
 	if len(PAGES) == 0 {
-		fmt.Println("[WARN] No pages provided. Defaulting to all pages.")
+		logger.Warn("No pages specified. Defaulting to processing all pages.")
 
 		pageCount, err := api.PageCountFile(PDF_PATH)
 		if err != nil {
-			fmt.Println("Error getting page count:", err)
+			logger.Errorf("Could not retrieve the page count from the PDF file (%s).", PDF_PATH)
+			logger.Debug(err)
 			return
 		}
 		for i := 0; i < pageCount; i++ {
@@ -135,18 +96,20 @@ func main() {
 	FILE_TYPE = strings.ToLower(FILE_TYPE)
 	format, ok := formatMap[FILE_TYPE]
 	if !ok {
-		fmt.Println("Unsupported file type:", FILE_TYPE)
+		logger.Errorf("Unsupported file type specified (%s).", FILE_TYPE)
+		logger.Debug(err)
 		return
 	}
 
 	ctx, err := api.ReadContextFile(PDF_PATH)
 	if err != nil {
-		fmt.Println("Error reading PDF context:", err)
+		logger.Error("Failed to read the PDF context.")
+		logger.Debug(err)
 		return
 	}
 
 	CPU_CORES := runtime.NumCPU()
-	ch := make(chan int, CPU_CORES)
+	ch := make(chan int, min(CPU_CORES, len(PAGES)))
 
 	start := time.Now()
 
@@ -159,7 +122,42 @@ func main() {
 	wg.Wait()
 
 	end := time.Now()
-	fmt.Printf("Time taken: %v\n", end.Sub(start))
+	logger.Debugf("Execution time: %v", end.Sub(start))
 
-	fmt.Println("All pages processed successfully.")
+	logger.Info("PDF to image conversion completed successfully.")
+}
+
+func extractPage(ctx *model.Context, ch chan int, format *imgconv.Format) {
+	defer wg.Done()
+	i := <-ch
+
+	logger.Debugf("-- Processing page %d --", i)
+
+	r, err := api.ExtractPage(ctx, i)
+	if err != nil {
+		logger.Errorf("Unable to extract page %d from the provided PDF.", i)
+		logger.Debug(err)
+		return
+	}
+
+	img, err := imgconv.Decode(r)
+	if err != nil {
+		logger.Errorf("Failed to decode page %d from the provided PDF.", i)
+		logger.Debug(err)
+		return
+	}
+
+	if scale != 100 {
+		img = imgconv.Resize(img, &imgconv.ResizeOption{Percent: scale})
+	} else if WIDTH != 0 && HEIGHT != 0 {
+		img = imgconv.Resize(img, &imgconv.ResizeOption{Width: WIDTH, Height: HEIGHT})
+	}
+
+	filename := fmt.Sprintf("%s/%d.%s", OUTPUT_PATH, i, FILE_TYPE)
+	err = imgconv.Save(filename, img, &imgconv.FormatOption{Format: *format})
+	if err != nil {
+		logger.Errorf("Could not save page %d to file (%s).", i, filename)
+		logger.Debug(err)
+		return
+	}
 }
