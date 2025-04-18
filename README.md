@@ -1,6 +1,6 @@
 # Imagify
 
-Imagify is a command-line tool designed to convert PDF pages into images. It allows users to extract specific pages or all pages from a PDF file and save them as images in various formats such as PNG, JPG, PDF, or WEBP. The tool also provides options to customize the output by specifying scaling factors, dimensions, and output directories.
+Imagify is a command-line tool designed to split & convert PDF pages into images. It allows users to extract specific pages or all pages from a PDF file and save them as images in various formats such as PNG, JPG, PDF, or WEBP. The tool also provides options to customize the output by specifying scaling factors, dimensions, and output directories.
 
 ## Features
 
@@ -29,4 +29,4 @@ Imagify is ideal for converting PDF documents into image formats for use in pres
 imagify --pdf_path=Original-Microsoft-Source-Code.pdf --output_path=./images --scale=150 --file_type=jpg --pages=1,2,3
 ```
 
-This command converts pages 1, 2, and 3 of `input.pdf` into JPG images, scales them to 150%, and saves them in the `./images` directory.
+This command converts pages 1, 2, and 3 of `Original-Microsoft-Source-Code.pdf` into JPG images, scales them to 150%, and saves them in the `./images` directory.

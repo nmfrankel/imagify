@@ -4,14 +4,27 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/pdfcpu/pdfcpu/pkg/api"
+	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 	"github.com/sunshineplan/imgconv"
 )
 
 type intSlice []int
+
+var wg sync.WaitGroup
+var formatMap = map[string]imgconv.Format{
+	"png":  imgconv.PNG,
+	"jpg":  imgconv.JPEG,
+	"jpeg": imgconv.JPEG,
+	"pdf":  imgconv.PDF,
+	"webp": imgconv.WEBP,
+}
 
 var PAGES intSlice
 var PDF_PATH string
@@ -42,6 +55,37 @@ func (i *intSlice) Set(value string) error {
 		*i = append(*i, num)
 	}
 	return nil
+}
+
+func extractPage(ctx *model.Context, ch chan int, format *imgconv.Format) {
+	defer wg.Done()
+	i := <-ch
+
+	fmt.Println("Processing page:", i)
+
+	r, err := api.ExtractPage(ctx, i)
+	if err != nil {
+		fmt.Println("Error extracting page:", err)
+		return
+	}
+
+	img, err := imgconv.Decode(r)
+	if err != nil {
+		fmt.Println("Error decoding image:", err)
+		return
+	}
+
+	if scale != 100 {
+		img = imgconv.Resize(img, &imgconv.ResizeOption{Percent: scale})
+	} else if WIDTH != 0 && HEIGHT != 0 {
+		img = imgconv.Resize(img, &imgconv.ResizeOption{Width: WIDTH, Height: HEIGHT})
+	}
+
+	filename := fmt.Sprintf("%s/%d.%s", OUTPUT_PATH, i, FILE_TYPE)
+	if err := imgconv.Save(filename, img, &imgconv.FormatOption{Format: *format}); err != nil {
+		fmt.Println("Error saving image:", err)
+		return
+	}
 }
 
 func main() {
@@ -88,48 +132,34 @@ func main() {
 		}
 	}
 
+	FILE_TYPE = strings.ToLower(FILE_TYPE)
+	format, ok := formatMap[FILE_TYPE]
+	if !ok {
+		fmt.Println("Unsupported file type:", FILE_TYPE)
+		return
+	}
+
 	ctx, err := api.ReadContextFile(PDF_PATH)
 	if err != nil {
 		fmt.Println("Error reading PDF context:", err)
 		return
 	}
 
+	CPU_CORES := runtime.NumCPU()
+	ch := make(chan int, CPU_CORES)
+
+	start := time.Now()
+
 	for _, i := range PAGES {
-		r, err := api.ExtractPage(ctx, i)
-		if err != nil {
-			fmt.Println("Error extracting page:", err)
-			return
-		}
+		go extractPage(ctx, ch, &format)
 
-		img, err := imgconv.Decode(r)
-		if err != nil {
-			fmt.Println("Error decoding image:", err)
-			return
-		}
-
-		if scale != 100 {
-			img = imgconv.Resize(img, &imgconv.ResizeOption{Percent: scale})
-		} else if WIDTH != 0 && HEIGHT != 0 {
-			img = imgconv.Resize(img, &imgconv.ResizeOption{Width: WIDTH, Height: HEIGHT})
-		}
-
-		formatMap := map[string]imgconv.Format{
-			"png":  imgconv.PNG,
-			"jpg":  imgconv.JPEG,
-			"pdf":  imgconv.PDF,
-			"webp": imgconv.WEBP,
-		}
-
-		format, ok := formatMap[strings.ToLower(FILE_TYPE)]
-		if !ok {
-			fmt.Println("Unsupported file type:", FILE_TYPE)
-			return
-		}
-
-		filename := fmt.Sprintf("%s/%d.%s", OUTPUT_PATH, i, strings.ToLower(FILE_TYPE))
-		if err := imgconv.Save(filename, img, &imgconv.FormatOption{Format: format}); err != nil {
-			fmt.Println("Error saving image:", err)
-			return
-		}
+		wg.Add(1)
+		ch <- i
 	}
+	wg.Wait()
+
+	end := time.Now()
+	fmt.Printf("Time taken: %v\n", end.Sub(start))
+
+	fmt.Println("All pages processed successfully.")
 }
