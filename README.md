@@ -9,24 +9,23 @@ Imagify is a command-line tool designed to split & convert PDF pages into images
 - Resize output images by specifying a scaling factor or custom dimensions.
 - Specify the output directory for saving the generated images.
 
-## Flags
-
-- `--pdf_path` (Required): Path to the input PDF file.
-- `--output_path`: Directory where output files will be saved. Defaults to the current directory.
-- `--scale`: Scaling factor for the output image as a percentage. Defaults to 100%.
-- `--width`: Width of the output image in pixels. Ignored if scale is provided.
-- `--height`: Height of the output image in pixels. Ignored if scale is provided.
-- `--file_type`: Output image format. Supported formats: `png`, `jpg`, `pdf`, `webp`. Defaults to `png`.
-- `--pages`: List of page numbers to process (e.g., `--pages=1,2,3` or `--pages=[1,2,3]`).
-
-## Usage
-
-Imagify is ideal for converting PDF documents into image formats for use in presentations, web applications, or other scenarios where image formats are required.
-
-### Example
+## Example
 
 ```bash
 imagify --pdf_path=Original-Microsoft-Source-Code.pdf --output_path=./images --scale=150 --file_type=jpg --pages=1,2,3
 ```
 
 This command converts pages 1, 2, and 3 of `Original-Microsoft-Source-Code.pdf` into JPG images, scales them to 150%, and saves them in the `./images` directory.
+
+## Flags
+
+| Option         | Description                                                                                     |
+|----------------|-------------------------------------------------------------------------------------------------|
+| `--pdf_path`   | Path to the input PDF file.                                                                     |
+| `--output_path`| Directory where output files will be saved. Defaults to the current directory.                  |
+| `--scale`      | Scaling factor for the output image as a percentage. Defaults to `100%`.                        |
+| `--width`      | Width of the output image in pixels. Ignored if `--scale` is provided.                          |
+| `--height`     | Height of the output image in pixels. Ignored if `--scale` is provided.                         |
+| `--file_type`  | Output image format. Supported formats: `png`, `jpg`, `pdf`, `webp`. Defaults to `png`.         |
+| `--pages`      | List of page numbers to process (e.g., `--pages=1,2,3` or `--pages=[1,2,3]`).                   |
+| `--debug`      | Print debug logs. Defaults to `false`.                                                          |

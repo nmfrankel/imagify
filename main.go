@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path"
 	"runtime"
 	"strings"
 	"sync"
@@ -27,7 +28,7 @@ var formatMap = map[string]imgconv.Format{
 var PAGES intSlice
 var PDF_PATH string
 var OUTPUT_PATH string
-var scale float64
+var SCALE float64
 var WIDTH int
 var HEIGHT int
 var FILE_TYPE string
@@ -35,8 +36,8 @@ var DEBUG bool
 
 func init() {
 	flag.StringVar(&PDF_PATH, "pdf_path", "", "Path to the input PDF file. (Required)")
-	flag.StringVar(&OUTPUT_PATH, "output_path", "./", "Directory where output files will be saved. Defaults to the current directory.")
-	flag.Float64Var(&scale, "scale", 100, "Scaling factor for the output image as a percentage. Defaults to 100%.")
+	flag.StringVar(&OUTPUT_PATH, "output_path", "", "Directory where output files will be saved. Defaults to the current directory.")
+	flag.Float64Var(&SCALE, "scale", 100, "Scaling factor for the output image as a percentage. Defaults to 100%.")
 	flag.IntVar(&WIDTH, "width", 0, "Width of the output image in pixels. Ignored if scale is provided.")
 	flag.IntVar(&HEIGHT, "height", 0, "Height of the output image in pixels. Ignored if scale is provided.")
 	flag.StringVar(&FILE_TYPE, "file_type", "png", "Output image format. Supported formats: png, jpg, pdf, webp. Defaults to png.")
@@ -70,8 +71,17 @@ func main() {
 		return
 	}
 
-	if OUTPUT_PATH == "./" {
-		OUTPUT_PATH = strings.Split(PDF_PATH, ".")[0]
+	if OUTPUT_PATH == "" {
+		pwd, err := os.Getwd()
+		if err != nil {
+			logger.Error("Unable to retrieve the current working directory.")
+			logger.Debug(err)
+			return
+		}
+
+		baseFilename := strings.TrimSuffix(path.Base(PDF_PATH), path.Ext(PDF_PATH))
+		OUTPUT_PATH = path.Join(pwd, baseFilename)
+		logger.Warnf("No output path specified. Defaulting to the current directory. (%s)", OUTPUT_PATH)
 	}
 
 	err = os.MkdirAll(OUTPUT_PATH, os.ModePerm)
@@ -82,17 +92,20 @@ func main() {
 	}
 
 	if len(PAGES) == 0 {
-		logger.Warn("No pages specified. Defaulting to processing all pages.")
-
 		pageCount, err := api.PageCountFile(PDF_PATH)
 		if err != nil {
 			logger.Errorf("Could not retrieve the page count from the PDF file (%s).", PDF_PATH)
 			logger.Debug(err)
 			return
 		}
+		logger.Warnf("No pages specified. Defaulting to all %d pages.", pageCount)
 		for i := 0; i < pageCount; i++ {
 			PAGES = append(PAGES, i+1)
 		}
+	}
+
+	if SCALE != 100 && (WIDTH != 0 || HEIGHT != 0) {
+		logger.Warnf("Both scale and width/height are specified. Only scale will be applied.")
 	}
 
 	FILE_TYPE = strings.ToLower(FILE_TYPE)
@@ -110,9 +123,8 @@ func main() {
 		return
 	}
 
-	cpuCores := runtime.NumCPU()
-
 	wg := sync.WaitGroup{}
+	cpuCores := runtime.NumCPU()
 	ch := make(chan struct{}, min(cpuCores, len(PAGES)))
 
 	for _, i := range PAGES {
@@ -146,10 +158,14 @@ func extractPage(ctx *model.Context, pageNum int, format *imgconv.Format) {
 		return
 	}
 
-	if scale != 100 {
-		img = imgconv.Resize(img, &imgconv.ResizeOption{Percent: scale})
+	if SCALE != 100 {
+		img = imgconv.Resize(img, &imgconv.ResizeOption{Percent: SCALE})
 	} else if WIDTH != 0 && HEIGHT != 0 {
 		img = imgconv.Resize(img, &imgconv.ResizeOption{Width: WIDTH, Height: HEIGHT})
+	} else if WIDTH != 0 {
+		img = imgconv.Resize(img, &imgconv.ResizeOption{Width: WIDTH})
+	} else if HEIGHT != 0 {
+		img = imgconv.Resize(img, &imgconv.ResizeOption{Height: HEIGHT})
 	}
 
 	filename := fmt.Sprintf("%s/%d.%s", OUTPUT_PATH, pageNum, FILE_TYPE)
