@@ -72,16 +72,17 @@ func main() {
 	}
 
 	if OUTPUT_PATH == "" {
-		pwd, err := os.Getwd()
+		wd, err := os.Getwd()
 		if err != nil {
 			logger.Error("Unable to retrieve the current working directory.")
 			logger.Debug(err)
 			return
 		}
 
-		baseFilename := strings.TrimSuffix(path.Base(PDF_PATH), path.Ext(PDF_PATH))
-		OUTPUT_PATH = path.Join(pwd, baseFilename)
-		logger.Warnf("No output path specified. Defaulting to the current directory. (%s)", OUTPUT_PATH)
+		fn := path.Base(strings.Replace(PDF_PATH, "\\", "/", -1))
+		baseFn := strings.TrimSuffix(fn, path.Ext(PDF_PATH))
+		OUTPUT_PATH = path.Join(wd, baseFn)
+		logger.Warnf("No output path specified. Defaulting to the current directory (%s).", OUTPUT_PATH)
 	}
 
 	err = os.MkdirAll(OUTPUT_PATH, os.ModePerm)
@@ -99,8 +100,8 @@ func main() {
 			return
 		}
 		logger.Warnf("No pages specified. Defaulting to all %d pages.", pageCount)
-		for i := 0; i < pageCount; i++ {
-			PAGES = append(PAGES, i+1)
+		for i := 1; i <= pageCount; i++ {
+			PAGES = append(PAGES, i)
 		}
 	}
 
@@ -127,14 +128,14 @@ func main() {
 	cpuCores := runtime.NumCPU()
 	ch := make(chan struct{}, min(cpuCores, len(PAGES)))
 
-	for _, i := range PAGES {
+	for _, v := range PAGES {
 		wg.Add(1)
 		ch <- struct{}{}
-		go func(i int) {
-			extractPage(ctx, i, &format)
+		go func(v int) {
+			extractPage(ctx, v, &format)
 			wg.Done()
 			<-ch
-		}(i)
+		}(v)
 	}
 	wg.Wait()
 
@@ -152,6 +153,7 @@ func extractPage(ctx *model.Context, pageNum int, format *imgconv.Format) {
 	}
 
 	img, err := imgconv.Decode(r)
+	logger.Debug(err)
 	if err != nil {
 		logger.Errorf("Failed to decode page %d from the provided PDF.", pageNum)
 		logger.Debug(err)
