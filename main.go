@@ -9,8 +9,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/pdfcpu/pdfcpu/pkg/api"
-	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
+	"github.com/gen2brain/go-fitz"
 	logger "github.com/sirupsen/logrus"
 	"github.com/sunshineplan/imgconv"
 )
@@ -92,15 +91,19 @@ func main() {
 		return
 	}
 
+	pdf, err := fitz.New(PDF_PATH)
+	if err != nil {
+		logger.Error("Failed to read PDF.")
+		logger.Debug(err)
+		return
+	}
+
+	defer pdf.Close()
+
 	if len(PAGES) == 0 {
-		pageCount, err := api.PageCountFile(PDF_PATH)
-		if err != nil {
-			logger.Errorf("Could not retrieve the page count from the PDF file (%s).", PDF_PATH)
-			logger.Debug(err)
-			return
-		}
+		pageCount := pdf.NumPage()
 		logger.Warnf("No pages specified. Defaulting to all %d pages.", pageCount)
-		for i := 1; i <= pageCount; i++ {
+		for i := 0; i < pageCount; i++ {
 			PAGES = append(PAGES, i)
 		}
 	}
@@ -117,13 +120,6 @@ func main() {
 		return
 	}
 
-	ctx, err := api.ReadContextFile(PDF_PATH)
-	if err != nil {
-		logger.Error("Failed to read the PDF context.")
-		logger.Debug(err)
-		return
-	}
-
 	wg := sync.WaitGroup{}
 	cpuCores := runtime.NumCPU()
 	ch := make(chan struct{}, min(cpuCores, len(PAGES)))
@@ -132,7 +128,7 @@ func main() {
 		wg.Add(1)
 		ch <- struct{}{}
 		go func(v int) {
-			extractPage(ctx, v, &format)
+			extractPage(pdf, v, &format)
 			wg.Done()
 			<-ch
 		}(v)
@@ -142,36 +138,29 @@ func main() {
 	logger.Info("PDF to image conversion completed successfully.")
 }
 
-func extractPage(ctx *model.Context, pageNum int, format *imgconv.Format) {
+func extractPage(pdf *fitz.Document, pageNum int, format *imgconv.Format) {
 	logger.Debugf("-- Processing page %d --", pageNum)
 
-	r, err := api.ExtractPage(ctx, pageNum)
+	img, err := pdf.Image(pageNum)
 	if err != nil {
 		logger.Errorf("Unable to extract page %d from the provided PDF.", pageNum)
 		logger.Debug(err)
 		return
 	}
 
-	img, err := imgconv.Decode(r)
-	logger.Debug(err)
-	if err != nil {
-		logger.Errorf("Failed to decode page %d from the provided PDF.", pageNum)
-		logger.Debug(err)
-		return
-	}
-
+	r := img.SubImage(img.Bounds())
 	if SCALE != 100 {
-		img = imgconv.Resize(img, &imgconv.ResizeOption{Percent: SCALE})
+		r = imgconv.Resize(r, &imgconv.ResizeOption{Percent: SCALE})
 	} else if WIDTH != 0 && HEIGHT != 0 {
-		img = imgconv.Resize(img, &imgconv.ResizeOption{Width: WIDTH, Height: HEIGHT})
+		r = imgconv.Resize(r, &imgconv.ResizeOption{Width: WIDTH, Height: HEIGHT})
 	} else if WIDTH != 0 {
-		img = imgconv.Resize(img, &imgconv.ResizeOption{Width: WIDTH})
+		r = imgconv.Resize(r, &imgconv.ResizeOption{Width: WIDTH})
 	} else if HEIGHT != 0 {
-		img = imgconv.Resize(img, &imgconv.ResizeOption{Height: HEIGHT})
+		r = imgconv.Resize(r, &imgconv.ResizeOption{Height: HEIGHT})
 	}
 
 	filename := fmt.Sprintf("%s/%d.%s", OUTPUT_PATH, pageNum, FILE_TYPE)
-	err = imgconv.Save(filename, img, &imgconv.FormatOption{Format: *format})
+	err = imgconv.Save(filename, r, &imgconv.FormatOption{Format: *format})
 	if err != nil {
 		logger.Errorf("Could not save page %d to file (%s).", pageNum, filename)
 		logger.Debug(err)
