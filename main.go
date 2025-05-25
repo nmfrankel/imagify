@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/gen2brain/go-fitz"
+	"github.com/schollz/progressbar/v3"
 	logger "github.com/sirupsen/logrus"
 	"github.com/sunshineplan/imgconv"
 )
@@ -57,7 +58,7 @@ func init() {
 }
 
 func main() {
-	logger.Info("Starting Imagify...")
+	logger.Info("Imagify started...")
 	if PDF_PATH == "" {
 		logger.Error("Please provide the path to the PDF file using the --pdf_path flag.")
 		return
@@ -109,6 +110,8 @@ func main() {
 		}
 	}
 
+	progress := progressbar.Default(int64(len(PAGES)), "Processing...")
+
 	if SCALE != 100 && (WIDTH != 0 || HEIGHT != 0) {
 		logger.Warnf("Both scale and width/height are specified. Only scale will be applied.")
 	}
@@ -129,7 +132,7 @@ func main() {
 		wg.Add(1)
 		ch <- struct{}{}
 		go func(v int) {
-			extractPage(pdf, v, &format)
+			extractPage(pdf, v, &format, progress)
 			wg.Done()
 			<-ch
 		}(v)
@@ -139,7 +142,7 @@ func main() {
 	logger.Info("PDF to image conversion completed successfully.")
 }
 
-func extractPage(doc *fitz.Document, pageNum int, format *imgconv.Format) {
+func extractPage(doc *fitz.Document, pageNum int, format *imgconv.Format, bar *progressbar.ProgressBar) {
 	logger.Debugf("-> Processing page %d <-", pageNum)
 
 	src, err := doc.Image(pageNum)
@@ -166,5 +169,9 @@ func extractPage(doc *fitz.Document, pageNum int, format *imgconv.Format) {
 		logger.Errorf("Unable to save file (%s).", out)
 		logger.Debug(err)
 		return
+	}
+
+	if !DEBUG {
+		bar.Add(1)
 	}
 }
