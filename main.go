@@ -26,7 +26,7 @@ var formatMap = map[string]imgconv.Format{
 
 var PAGES intSlice
 var PDF_PATH string
-var OUTPUT_PATH string
+var OUT_PATH string
 var SCALE float64
 var WIDTH int
 var HEIGHT int
@@ -34,12 +34,12 @@ var FILE_TYPE string
 var DEBUG bool
 
 func init() {
-	flag.StringVar(&PDF_PATH, "pdf_path", "", "Path to the input PDF file. (Required)")
-	flag.StringVar(&OUTPUT_PATH, "output_path", "", "Directory where output files will be saved. Defaults to the current directory.")
+	flag.StringVar(&PDF_PATH, "pdf", "", "Path to the input PDF file. (Required)")
+	flag.StringVar(&OUT_PATH, "out", "", "Directory where output files will be saved. Defaults to the current directory.")
 	flag.Float64Var(&SCALE, "scale", 100, "Scaling factor for the output image as a percentage. Defaults to 100%.")
 	flag.IntVar(&WIDTH, "width", 0, "Width of the output image in pixels. Ignored if scale is provided.")
 	flag.IntVar(&HEIGHT, "height", 0, "Height of the output image in pixels. Ignored if scale is provided.")
-	flag.StringVar(&FILE_TYPE, "file_type", "png", "Output image format. Supported formats: png, jpg, pdf, webp. Defaults to png.")
+	flag.StringVar(&FILE_TYPE, "encoding", "png", "Output image format. Supported formats: png, jpg, pdf, webp. Defaults to png.")
 	flag.Var(&PAGES, "pages", "List of page numbers to process (e.g., --pages=1,2,3 or --pages=[1,2,3]).")
 	flag.BoolVar(&DEBUG, "debug", false, "Print debug logs.")
 	flag.Parse()
@@ -70,7 +70,7 @@ func main() {
 		return
 	}
 
-	if OUTPUT_PATH == "" {
+	if OUT_PATH == "" {
 		wd, err := os.Getwd()
 		if err != nil {
 			logger.Error("Unable to retrieve the current working directory.")
@@ -80,20 +80,20 @@ func main() {
 
 		fn := path.Base(strings.Replace(PDF_PATH, "\\", "/", -1))
 		baseFn := strings.TrimSuffix(fn, path.Ext(PDF_PATH))
-		OUTPUT_PATH = path.Join(wd, baseFn)
-		logger.Warnf("No output path specified. Defaulting to the current directory (%s).", OUTPUT_PATH)
+		OUT_PATH = path.Join(wd, baseFn)
+		logger.Warnf("No output path specified. Defaulting to the current directory (%s).", OUT_PATH)
 	}
 
-	err = os.MkdirAll(OUTPUT_PATH, os.ModePerm)
+	err = os.MkdirAll(OUT_PATH, os.ModePerm)
 	if err != nil {
-		logger.Errorf("Unable to create the output directory (%s).", OUTPUT_PATH)
+		logger.Errorf("Unable to create the output directory (%s).", OUT_PATH)
 		logger.Debug(err)
 		return
 	}
 
 	pdf, err := fitz.New(PDF_PATH)
 	if err != nil {
-		logger.Error("Failed to read PDF.")
+		logger.Error("Failed to read provided PDF.")
 		logger.Debug(err)
 		return
 	}
@@ -103,8 +103,9 @@ func main() {
 	if len(PAGES) == 0 {
 		pageCount := pdf.NumPage()
 		logger.Warnf("No pages specified. Defaulting to all %d pages.", pageCount)
-		for i := 0; i < pageCount; i++ {
-			PAGES = append(PAGES, i)
+		PAGES = make(intSlice, pageCount)
+		for i := range PAGES {
+			PAGES[i] = i
 		}
 	}
 
@@ -138,31 +139,31 @@ func main() {
 	logger.Info("PDF to image conversion completed successfully.")
 }
 
-func extractPage(pdf *fitz.Document, pageNum int, format *imgconv.Format) {
-	logger.Debugf("-- Processing page %d --", pageNum)
+func extractPage(doc *fitz.Document, pageNum int, format *imgconv.Format) {
+	logger.Debugf("-> Processing page %d <-", pageNum)
 
-	img, err := pdf.Image(pageNum)
+	src, err := doc.Image(pageNum)
 	if err != nil {
-		logger.Errorf("Unable to extract page %d from the provided PDF.", pageNum)
+		logger.Errorf("Unable to extract page %d from provided PDF.", pageNum)
 		logger.Debug(err)
 		return
 	}
 
-	r := img.SubImage(img.Bounds())
+	img := src.SubImage(src.Bounds())
 	if SCALE != 100 {
-		r = imgconv.Resize(r, &imgconv.ResizeOption{Percent: SCALE})
+		img = imgconv.Resize(img, &imgconv.ResizeOption{Percent: SCALE})
 	} else if WIDTH != 0 && HEIGHT != 0 {
-		r = imgconv.Resize(r, &imgconv.ResizeOption{Width: WIDTH, Height: HEIGHT})
+		img = imgconv.Resize(img, &imgconv.ResizeOption{Width: WIDTH, Height: HEIGHT})
 	} else if WIDTH != 0 {
-		r = imgconv.Resize(r, &imgconv.ResizeOption{Width: WIDTH})
+		img = imgconv.Resize(img, &imgconv.ResizeOption{Width: WIDTH})
 	} else if HEIGHT != 0 {
-		r = imgconv.Resize(r, &imgconv.ResizeOption{Height: HEIGHT})
+		img = imgconv.Resize(img, &imgconv.ResizeOption{Height: HEIGHT})
 	}
 
-	filename := fmt.Sprintf("%s/%d.%s", OUTPUT_PATH, pageNum, FILE_TYPE)
-	err = imgconv.Save(filename, r, &imgconv.FormatOption{Format: *format})
+	out := fmt.Sprintf("%s/%d.%s", OUT_PATH, pageNum, FILE_TYPE)
+	err = imgconv.Save(out, img, &imgconv.FormatOption{Format: *format})
 	if err != nil {
-		logger.Errorf("Could not save page %d to file (%s).", pageNum, filename)
+		logger.Errorf("Unable to save file (%s).", out)
 		logger.Debug(err)
 		return
 	}
