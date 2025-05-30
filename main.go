@@ -153,14 +153,21 @@ func extractPage(doc *fitz.Document, pageNum int, format *imgconv.Format, bar *p
 	}
 
 	img := src.SubImage(src.Bounds())
+	origBounds := img.Bounds()
+	origWidth := origBounds.Dx()
+	origHeight := origBounds.Dy()
+	ratio := float64(origWidth) / float64(origHeight)
+
 	if SCALE != 100 {
 		img = imgconv.Resize(img, &imgconv.ResizeOption{Percent: SCALE})
 	} else if WIDTH != 0 && HEIGHT != 0 {
 		img = imgconv.Resize(img, &imgconv.ResizeOption{Width: WIDTH, Height: HEIGHT})
 	} else if WIDTH != 0 {
-		img = imgconv.Resize(img, &imgconv.ResizeOption{Width: WIDTH})
+		HEIGHT = int(float64(WIDTH) / ratio)
+		img = imgconv.Resize(img, &imgconv.ResizeOption{Width: WIDTH, Height: HEIGHT})
 	} else if HEIGHT != 0 {
-		img = imgconv.Resize(img, &imgconv.ResizeOption{Height: HEIGHT})
+		WIDTH = int(float64(HEIGHT) * ratio)
+		img = imgconv.Resize(img, &imgconv.ResizeOption{Width: WIDTH, Height: HEIGHT})
 	}
 
 	out := fmt.Sprintf("%s/%d.%s", OUT_PATH, pageNum, FILE_TYPE)
